@@ -194,3 +194,76 @@ TEST(index_ranking_and_ties) {
 // =========================================================================
 
 int main(int argc, char** argv) { return mt::run_all(argc, argv); }
+
+TEST(heap_empty_throws) {
+    MinHeap<int> h;
+    CHECK_THROWS(h.top(), std::out_of_range);
+    CHECK_THROWS(h.pop(), std::out_of_range);
+    h.push(5);
+    h.pop();
+    CHECK_THROWS(h.pop(), std::out_of_range);
+}
+
+TEST(heap_topk_k_zero_and_too_big) {
+    std::vector<int> v;
+    v.push_back(4);
+    v.push_back(1);
+    v.push_back(9);
+    v.push_back(7);
+    v.push_back(3);
+
+    std::vector<int> r0 = top_k(v, 0);
+    CHECK_EQ(r0.size(), std::size_t{ 0 });
+
+    std::vector<int> r2 = top_k(v, 2);
+    CHECK_EQ(r2, (std::vector<int>{9, 7}));
+
+    std::vector<int> r10 = top_k(v, 10);
+    CHECK_EQ(r10, (std::vector<int>{9, 7, 4, 3, 1}));
+}
+
+// compare top_k to sorting the whole thing, on random numbers
+TEST(heap_topk_matches_sort) {
+    std::mt19937 rng(42);
+    std::vector<int> nums;
+    for (int i = 0; i < 1000; i++) {
+        nums.push_back(rng() % 100);   
+    }
+
+    std::vector<int> sorted = nums;
+    std::sort(sorted.begin(), sorted.end(), std::greater<int>());
+
+    int ks[] = { 1, 5, 10, 50, 1000 };
+    for (int k : ks) {
+        std::vector<int> got = top_k(nums, k);
+        std::vector<int> want(sorted.begin(), sorted.begin() + k);
+        CHECK_EQ(got, want);
+    }
+}
+
+// timing for the design log: top_k (k=10) vs std::sort on 100,000 numbers
+TEST(heap_timing_vs_sort) {
+    std::mt19937 rng(1);
+    std::vector<int> nums;
+    for (int i = 0; i < 100000; i++) {
+        nums.push_back(rng());
+    }
+
+    auto start = std::chrono::steady_clock::now();
+    std::vector<int> best = top_k(nums, 10);
+    auto mid = std::chrono::steady_clock::now();
+    std::vector<int> copy = nums;
+    std::sort(copy.begin(), copy.end(), std::greater<int>());
+    auto end = std::chrono::steady_clock::now();
+
+    double ms1 = std::chrono::duration<double, std::milli>(mid - start).count();
+    double ms2 = std::chrono::duration<double, std::milli>(end - mid).count();
+    std::printf("    top_k (k=10): %.3f ms\n", ms1);
+    std::printf("    std::sort:    %.3f ms\n", ms2);
+
+    CHECK_EQ(best.size(), std::size_t{ 10 });
+    CHECK_EQ(best[0], copy[0]);
+}
+
+int main(int argc, char** argv) { return mt::run_all(argc, argv); }
+
