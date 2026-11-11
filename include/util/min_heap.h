@@ -33,31 +33,36 @@ public:
 
     // Adds value. O(log n).
     void push(T value) {
-        // TODO: append to data_, then sift the new element up.
-        // Clue: compare with less_(a, b), never a < b. Some element types
-        // (e.g. the provided memory_store.cpp's Scored struct) have no
-        // operator<, and a min-heap of std::greater must still work.
-        (void)value;
+        data_.push_back(value);
+        std::size_t index = data_.size() - 1;
+        sift_up(index);
     }
 
     // The smallest element. Throws std::out_of_range if empty. O(1).
     const T& top() const {
-        // TODO
-        throw std::out_of_range("MinHeap::top not implemented");
+        if (data_.size() == 0) {
+            throw std::out_of_range("MinHeap::top on empty heap");
+        }
+        return data_[0];
     }
 
     // Removes and returns the smallest element. Throws std::out_of_range if
     // empty. O(log n).
     T pop() {
-        // TODO: save the root, move the last element to the root, shrink,
-        // sift down, return the saved root.
-        // Clue: check empty() first. With one element, there is no "last
-        // element" to move: just take it and pop_back().
-        // Clue: T result = std::move(data_[0]); then move the last element
-        // into slot 0 (moving avoids copying big strings).
-        throw std::out_of_range("MinHeap::pop not implemented");
+        if (data_.size() == 0) {
+            throw std::out_of_range("MinHeap::pop on empty heap");
+        }
+        T result = data_[0];
+        if (data_.size() == 1) {
+            data_.pop_back();
+        }
+        else {
+            data_[0] = data_[data_.size() - 1];
+            data_.pop_back();
+            sift_down(0);
+        }
+        return result;
     }
-
     std::size_t size() const noexcept { return data_.size(); }
     bool        empty() const noexcept { return data_.empty(); }
     void        clear() noexcept { data_.clear(); }
