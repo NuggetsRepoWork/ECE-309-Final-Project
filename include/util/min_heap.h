@@ -77,6 +77,52 @@ private:
     // Clue: in sift_down, the right child may not exist: check
     // 2*i+2 < data_.size() before reading it. Swap with the SMALLER child.
 
+    void sift_up(std::size_t index) {
+        while (index > 0) {
+            std::size_t parent = (index - 1) / 2;
+            if (less_(data_[index], data_[parent])) {
+
+                T temp = data_[index];
+
+                data_[index] = data_[parent];
+
+                data_[parent] = temp;
+
+                index = parent;
+            }
+            else {
+                break;
+            }
+        }
+    }
+    void sift_down(std::size_t index) {
+        bool finished = false;
+        
+        while (finished == false) {
+            std::size_t left = (2 * index) + 1;
+            std::size_t right = (2 * index) + 2;
+            std::size_t smallest = index;
+            if (left < data_.size()) {
+                if (less_(data_[left], data_[smallest])) {
+                    smallest = left;
+                }
+            }
+            if (right < data_.size()) {
+                if (less_(data_[right], data_[smallest])) {
+                    smallest = right;
+                }
+            }
+            if (smallest != index) {
+                T temp = data_[index];
+                data_[index] = data_[smallest];
+                data_[smallest] = temp;
+                index = smallest;
+            }
+            else {
+                finished = true;
+            }
+        }
+    }
     std::vector<T> data_;
     Less           less_;
 };
@@ -89,11 +135,7 @@ private:
 // space. Items that compare equal may come out in any order.
 template <typename T, typename Less = std::less<T>>
 std::vector<T> top_k(const std::vector<T>& items, std::size_t k, Less less = Less()) {
-    // TODO: keep a MinHeap<T, Less> of at most k items. For each item: if
-    // the heap has fewer than k items, push it; otherwise, if the heap's top
-    // is less than the item, pop the top and push the item. At the end, pop
-    // everything (smallest first) and return it reversed.
-    //
+    
     // Clues:
     //  * k == 0: return {} BEFORE the loop (top() on an empty heap throws).
     //  * Build the heap WITH the comparator:  MinHeap<T, Less> heap(less);
@@ -103,8 +145,31 @@ std::vector<T> top_k(const std::vector<T>& items, std::size_t k, Less less = Les
     //    heap.top() < item.  Read less(a, b) as "a is WORSE than b": the heap
     //    keeps the k best items with the worst of them on top.
     //  * std::reverse (from <algorithm>) flips a vector.
-    (void)items;
-    (void)k;
-    (void)less;
-    return {};
+
+    std::vector<T> result;
+    if (k == 0) {
+        return result;
+    }
+    if (items.size() == 0) {
+        return result;
+    }
+    MinHeap<T, Less> heap(less);
+    for (std::size_t i = 0; i < items.size(); i++) {
+        if (heap.size() < k) {
+            heap.push(items[i]);
+        }
+        else {
+            T smallest = heap.top();
+            if (less(smallest, items[i])) {
+                heap.pop();
+                heap.push(items[i]);
+            }
+        }
+    }
+    while (heap.empty() == false) {
+        T value = heap.pop();
+        result.push_back(value);
+    }
+    std::reverse(result.begin(), result.end());
+    return result;
 }
