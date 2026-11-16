@@ -86,6 +86,8 @@ private:
     static void        in_order(const Node* node,
                                 const std::function<void(const MemoryRecord&)>& fn);
 
+    static Node*       remove_node(Node* node, std::uint64_t id, bool* removed);
+
     Node*       root_ = nullptr;
     std::size_t count_ = 0;
 };

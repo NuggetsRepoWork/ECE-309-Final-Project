@@ -66,9 +66,48 @@ const MemoryRecord* MemoryIndex::find(std::uint64_t id) const {
     return nullptr;
 }
 
+MemoryIndex::Node* MemoryIndex::remove_node(Node* node, std::uint64_t id, bool* removed) {
+    if (node == nullptr) {
+        return nullptr;
+    }
+    if (id < node->rec.id) {
+        node->left = remove_node(node->left, id, removed);
+        return node;
+    }
+    if (id > node->rec.id) {
+        node->right = remove_node(node->right, id, removed);
+        return node;
+    }
+
+    *removed = true;
+    if (node->left == nullptr) {
+        Node* right_child = node->right;
+        delete node;
+        return right_child;
+    }
+    if (node->right == nullptr) {
+        Node* left_child = node->left;
+        delete node;
+        return left_child;
+    }
+
+    Node* successor = node->right;
+    while (successor->left != nullptr) {
+        successor = successor->left;
+    }
+    std::uint64_t successor_id = successor->rec.id;
+    node->rec = successor->rec;
+    node->right = remove_node(node->right, successor_id, removed);
+    return node;
+}
+
 bool MemoryIndex::remove(std::uint64_t id) {
-    (void)id;
-    return false;
+    bool removed = false;
+    root_ = remove_node(root_, id, &removed);
+    if (removed == true) {
+        count_ = count_ - 1;
+    }
+    return removed;
 }
 
 std::size_t MemoryIndex::size() const noexcept { return count_; }
