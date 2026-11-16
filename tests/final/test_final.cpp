@@ -57,7 +57,7 @@
 TEST(heap_pops_in_order) {
     MinHeap<int> h;
     for (int x : {5, 1, 4, 1, 3}) h.push(x);
-    CHECK_EQ(h.size(), std::size_t{ 5 });
+    CHECK_EQ(h.size(), std::size_t{5});
     CHECK_EQ(h.top(), 1);
     std::vector<int> got;
     while (!h.empty()) got.push_back(h.pop());
@@ -75,14 +75,14 @@ TEST(lru_evicts_least_recently_used) {
     CHECK(c.contains("a"));
     CHECK(!c.contains("b"));
     CHECK_EQ(c.keys_mru_to_lru(), (std::vector<std::string>{"c", "a"}));
-    CHECK_EQ(c.stats().evictions, std::size_t{ 1 });
+    CHECK_EQ(c.stats().evictions, std::size_t{1});
 }
 
 // Example 3 (bst): removing a node with two children keeps the tree sorted,
 // keeps every other record, and lowers size() by exactly one.
 TEST(bst_remove_two_children) {
     MemoryIndex t;
-    for (std::uint64_t id : {50, 30, 70, 60, 80}) REQUIRE(t.insert(MemoryRecord{ id, "m" + std::to_string(id) }));
+    for (std::uint64_t id : {50, 30, 70, 60, 80}) REQUIRE(t.insert(MemoryRecord{id, "m" + std::to_string(id)}));
     REQUIRE(t.remove(70));
     std::vector<std::uint64_t> ids;
     t.for_each_in_order([&](const MemoryRecord& r) { ids.push_back(r.id); });
@@ -90,23 +90,23 @@ TEST(bst_remove_two_children) {
     CHECK(t.find(70) == nullptr);
     REQUIRE(t.find(80) != nullptr);
     CHECK_EQ(t.find(80)->text, std::string("m80"));
-    CHECK_EQ(t.size(), std::size_t{ 4 });
+    CHECK_EQ(t.size(), std::size_t{4});
 }
 
 // Example 4 (ctx): the worked example in spec §4.4.
 TEST(ctx_spec_example) {
     std::vector<ContextItem> items{
-        { Role::System, 10, false },     // 0  protected
-        { Role::User, 10, false },       // 1
-        { Role::Assistant, 10, false },  // 2  dropped 3rd (oldest assistant)
-        { Role::Tool, 10, false },       // 3  dropped 1st
-        { Role::Assistant, 10, false },  // 4
-        { Role::Tool, 10, false },       // 5  dropped 2nd
-        { Role::User, 10, false },       // 6  recent: protected
-        { Role::Assistant, 10, false } }; // 7  recent: protected
+        {Role::System, 10, false},     // 0  protected
+        {Role::User, 10, false},       // 1
+        {Role::Assistant, 10, false},  // 2  dropped 3rd (oldest assistant)
+        {Role::Tool, 10, false},       // 3  dropped 1st
+        {Role::Assistant, 10, false},  // 4
+        {Role::Tool, 10, false},       // 5  dropped 2nd
+        {Role::User, 10, false},       // 6  recent: protected
+        {Role::Assistant, 10, false}}; // 7  recent: protected
     ContextPlan p = select_context(items, 50, 2);
     CHECK_EQ(p.keep, (std::vector<std::size_t>{0, 1, 4, 6, 7}));
-    CHECK_EQ(p.total_tokens, std::size_t{ 50 });
+    CHECK_EQ(p.total_tokens, std::size_t{50});
     CHECK(!p.over_budget);
 }
 
@@ -165,7 +165,7 @@ TEST(pol_chain_first_deny_stops_first_ask_wins) {
 // only the nodes still on the DFS path (b is already finished).
 TEST(graph_order_and_cycle_message) {
     DepGraph g;
-    for (const char* n : { "a", "b", "c", "d" }) g.add_node(n);
+    for (const char* n : {"a", "b", "c", "d"}) g.add_node(n);
     g.add_edge("a", "b");   // a requires b
     g.add_edge("a", "c");
     g.add_edge("b", "d");
@@ -231,7 +231,7 @@ TEST(heap_topk_matches_sort) {
     std::mt19937 rng(42);
     std::vector<int> nums;
     for (int i = 0; i < 1000; i++) {
-        nums.push_back(rng() % 100);
+        nums.push_back(rng() % 100);   
     }
 
     std::vector<int> sorted = nums;
@@ -275,8 +275,8 @@ TEST(lru_update_refresh_and_counts) {
     c.put("b", 2);
     c.put("c", 3);
     c.put("a", 10);
-    CHECK_EQ(c.size(), std::size_t{ 3 });
-    CHECK_EQ(c.stats().evictions, std::size_t{ 0 });
+    CHECK_EQ(c.size(), std::size_t{3});
+    CHECK_EQ(c.stats().evictions, std::size_t{0});
 
     const int* v = c.get("a");
     REQUIRE(v != nullptr);
@@ -288,15 +288,15 @@ TEST(lru_update_refresh_and_counts) {
     CHECK(!c.contains("b"));
     CHECK_EQ(c.keys_mru_to_lru(), (std::vector<std::string>{"d", "a", "c"}));
 
-    CHECK_EQ(c.stats().hits, std::size_t{ 1 });
-    CHECK_EQ(c.stats().misses, std::size_t{ 1 });
-    CHECK_EQ(c.stats().evictions, std::size_t{ 1 });
+    CHECK_EQ(c.stats().hits, std::size_t{1});
+    CHECK_EQ(c.stats().misses, std::size_t{1});
+    CHECK_EQ(c.stats().evictions, std::size_t{1});
 }
 
 TEST(lru_capacity_and_erase) {
     LruCache<std::string, int> zero(0);
     zero.put("a", 1);
-    CHECK_EQ(zero.size(), std::size_t{ 0 });
+    CHECK_EQ(zero.size(), std::size_t{0});
     CHECK(zero.get("a") == nullptr);
 
     LruCache<std::string, int> one(1);
@@ -304,7 +304,7 @@ TEST(lru_capacity_and_erase) {
     one.put("b", 2);
     CHECK(!one.contains("a"));
     CHECK_EQ(one.keys_mru_to_lru(), (std::vector<std::string>{"b"}));
-    CHECK_EQ(one.stats().evictions, std::size_t{ 1 });
+    CHECK_EQ(one.stats().evictions, std::size_t{1});
 
     LruCache<std::string, int> c(4);
     c.put("a", 1);
@@ -319,9 +319,48 @@ TEST(lru_capacity_and_erase) {
     CHECK_EQ(c.keys_mru_to_lru(), (std::vector<std::string>{"c"}));
     CHECK(!c.erase("zzz"));
     CHECK(c.erase("c"));
-    CHECK_EQ(c.size(), std::size_t{ 0 });
+    CHECK_EQ(c.size(), std::size_t{0});
     c.put("x", 9);
     CHECK_EQ(c.keys_mru_to_lru(), (std::vector<std::string>{"x"}));
+}
+
+TEST(bst_insert_find_order_and_height) {
+    MemoryIndex t;
+    CHECK_EQ(t.height(), std::size_t{0});
+    CHECK(t.find(5) == nullptr);
+    REQUIRE(t.insert(MemoryRecord{50, "fifty"}));
+    CHECK_EQ(t.height(), std::size_t{1});
+    REQUIRE(t.insert(MemoryRecord{30, "thirty"}));
+    REQUIRE(t.insert(MemoryRecord{70, "seventy"}));
+    CHECK_EQ(t.height(), std::size_t{2});
+    REQUIRE(t.insert(MemoryRecord{20, "twenty"}));
+    CHECK_EQ(t.height(), std::size_t{3});
+
+    CHECK(!t.insert(MemoryRecord{30, "other"}));
+    CHECK_EQ(t.size(), std::size_t{4});
+    REQUIRE(t.find(30) != nullptr);
+    CHECK_EQ(t.find(30)->text, std::string("thirty"));
+    CHECK(t.find(99) == nullptr);
+
+    std::vector<std::uint64_t> ids;
+    t.for_each_in_order([&ids](const MemoryRecord& r) { ids.push_back(r.id); });
+    CHECK_EQ(ids, (std::vector<std::uint64_t>{20, 30, 50, 70}));
+}
+
+TEST(bst_clear_and_reuse) {
+    MemoryIndex t;
+    for (std::uint64_t i = 1; i <= 10; i++) {
+        t.insert(MemoryRecord{i, "x"});
+    }
+    CHECK_EQ(t.size(), std::size_t{10});
+    t.clear();
+    CHECK_EQ(t.size(), std::size_t{0});
+    CHECK_EQ(t.height(), std::size_t{0});
+    CHECK(t.find(3) == nullptr);
+    REQUIRE(t.insert(MemoryRecord{3, "again"}));
+    CHECK_EQ(t.size(), std::size_t{1});
+    t.clear();
+    t.clear();
 }
 
 int main(int argc, char** argv) { return mt::run_all(argc, argv); }
