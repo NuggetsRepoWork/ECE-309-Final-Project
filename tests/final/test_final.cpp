@@ -363,4 +363,64 @@ TEST(bst_clear_and_reuse) {
     t.clear();
 }
 
+TEST(bst_remove_leaf_one_child_and_root) {
+    MemoryIndex t;
+    std::uint64_t ids[] = {50, 30, 70, 20, 40, 60, 80};
+    for (std::uint64_t id : ids) {
+        REQUIRE(t.insert(MemoryRecord{id, "m"}));
+    }
+    auto get_ids = [&t]() {
+        std::vector<std::uint64_t> v;
+        t.for_each_in_order([&v](const MemoryRecord& r) { v.push_back(r.id); });
+        return v;
+    };
+
+    REQUIRE(t.remove(20));
+    CHECK_EQ(get_ids(), (std::vector<std::uint64_t>{30, 40, 50, 60, 70, 80}));
+    REQUIRE(t.remove(30));
+    CHECK_EQ(get_ids(), (std::vector<std::uint64_t>{40, 50, 60, 70, 80}));
+    REQUIRE(t.remove(50));
+    CHECK_EQ(get_ids(), (std::vector<std::uint64_t>{40, 60, 70, 80}));
+    CHECK(t.find(50) == nullptr);
+    CHECK(!t.remove(999));
+    CHECK_EQ(t.size(), std::size_t{4});
+
+    REQUIRE(t.remove(40));
+    REQUIRE(t.remove(60));
+    REQUIRE(t.remove(70));
+    REQUIRE(t.remove(80));
+    CHECK_EQ(t.size(), std::size_t{0});
+    CHECK_EQ(t.height(), std::size_t{0});
+
+    REQUIRE(t.insert(MemoryRecord{1, "a"}));
+    REQUIRE(t.insert(MemoryRecord{2, "b"}));
+    REQUIRE(t.remove(1));
+    CHECK(t.find(2) != nullptr);
+    CHECK_EQ(t.size(), std::size_t{1});
+}
+
+TEST(bst_heights_sequential_vs_shuffled) {
+    MemoryIndex seq;
+    for (std::uint64_t i = 1; i <= 1000; i++) {
+        seq.insert(MemoryRecord{i, "x"});
+    }
+
+    std::vector<std::uint64_t> order;
+    for (std::uint64_t i = 1; i <= 1000; i++) {
+        order.push_back(i);
+    }
+    std::mt19937 rng(5);
+    std::shuffle(order.begin(), order.end(), rng);
+    MemoryIndex shuf;
+    for (std::uint64_t id : order) {
+        shuf.insert(MemoryRecord{id, "x"});
+    }
+
+    std::printf("    height after 1..1000 in order:  %zu\n", seq.height());
+    std::printf("    height after 1..1000 shuffled:  %zu\n", shuf.height());
+    CHECK_EQ(seq.height(), std::size_t{1000});
+    CHECK(shuf.height() < 100);
+    CHECK_EQ(shuf.size(), std::size_t{1000});
+}
+
 int main(int argc, char** argv) { return mt::run_all(argc, argv); }
