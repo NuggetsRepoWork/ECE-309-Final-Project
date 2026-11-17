@@ -423,4 +423,63 @@ TEST(bst_heights_sequential_vs_shuffled) {
     CHECK_EQ(shuf.size(), std::size_t{1000});
 }
 
+TEST(ctx_protected_drop_order_and_over_budget) {
+    std::vector<ContextItem> items{
+        {Role::System, 10, false},
+        {Role::Tool, 10, false},
+        {Role::User, 10, true},
+        {Role::Assistant, 10, false},
+        {Role::Tool, 10, false},
+        {Role::User, 10, false}};
+
+    ContextPlan p = select_context(items, 25, 1);
+    CHECK_EQ(p.keep, (std::vector<std::size_t>{0, 2, 5}));
+    CHECK_EQ(p.total_tokens, std::size_t{30});
+    CHECK(p.over_budget);
+
+    ContextPlan all = select_context(items, 100, 1);
+    CHECK_EQ(all.keep.size(), std::size_t{6});
+    CHECK(!all.over_budget);
+
+    std::vector<ContextItem> three{
+        {Role::User, 10, false},
+        {Role::Assistant, 10, false},
+        {Role::Tool, 10, false}};
+    CHECK_EQ(select_context(three, 20, 0).keep, (std::vector<std::size_t>{0, 1}));
+    CHECK_EQ(select_context(three, 10, 0).keep, (std::vector<std::size_t>{0}));
+}
+
+TEST(ctx_edge_cases) {
+    std::vector<ContextItem> none;
+    ContextPlan e = select_context(none, 10, 2);
+    CHECK_EQ(e.keep.size(), std::size_t{0});
+    CHECK_EQ(e.total_tokens, std::size_t{0});
+    CHECK(!e.over_budget);
+
+    std::vector<ContextItem> three{
+        {Role::User, 10, false},
+        {Role::Tool, 10, false},
+        {Role::Assistant, 10, false}};
+    ContextPlan big = select_context(three, 5, 10);
+    CHECK_EQ(big.keep, (std::vector<std::size_t>{0, 1, 2}));
+    CHECK_EQ(big.total_tokens, std::size_t{30});
+    CHECK(big.over_budget);
+
+    ContextPlan exact = select_context(three, 30, 0);
+    CHECK_EQ(exact.keep.size(), std::size_t{3});
+    CHECK(!exact.over_budget);
+
+    std::vector<ContextItem> only_protected{
+        {Role::System, 10, false},
+        {Role::User, 10, true}};
+    ContextPlan z = select_context(only_protected, 0, 0);
+    CHECK_EQ(z.keep, (std::vector<std::size_t>{0, 1}));
+    CHECK(z.over_budget);
+
+    ContextPlan drop_all = select_context(three, 0, 0);
+    CHECK_EQ(drop_all.keep.size(), std::size_t{0});
+    CHECK_EQ(drop_all.total_tokens, std::size_t{0});
+    CHECK(!drop_all.over_budget);
+}
+
 int main(int argc, char** argv) { return mt::run_all(argc, argv); }
