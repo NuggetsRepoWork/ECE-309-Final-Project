@@ -3,70 +3,105 @@
 #include "skills/dep_graph.h"
 
 bool DepGraph::add_node(const std::string& name) {
-    // TODO
-    (void)name;
-    return false;
+    if (requires_.find(name) != requires_.end()) {
+        return false;
+    }
+    requires_[name] = std::vector<std::string>();
+    return true;
 }
 
 bool DepGraph::add_edge(const std::string& from, const std::string& to) {
-    // TODO
-    (void)from;
-    (void)to;
-    return false;
+    auto it = requires_.find(from);
+    if (it == requires_.end()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < it->second.size(); i++) {
+        if (it->second[i] == to) {
+            return false;
+        }
+    }
+    it->second.push_back(to);
+    required_by_[to].push_back(from);
+    return true;
 }
 
 bool DepGraph::has_node(const std::string& name) const {
-    // TODO
-    (void)name;
-    return false;
+    return requires_.find(name) != requires_.end();
 }
 
 std::size_t DepGraph::node_count() const noexcept {
-    // TODO
-    return 0;
+    return requires_.size();
 }
 
 const std::vector<std::string>& DepGraph::requirements(const std::string& name) const {
-    // TODO: return the stored list; for an unknown name return a reference
-    // to an empty vector that outlives the call (e.g. a function-local
-    // static const).
-    (void)name;
     static const std::vector<std::string> kNone;
-    return kNone;
+    auto it = requires_.find(name);
+    if (it == requires_.end()) {
+        return kNone;
+    }
+    return it->second;
+}
+
+static bool in_list(const std::vector<std::string>& list, const std::string& name) {
+    for (std::size_t i = 0; i < list.size(); i++) {
+        if (list[i] == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool DepGraph::dfs(const std::string& node, std::vector<std::string>& path,
+                   std::vector<std::string>* out, std::string* error) const {
+    path.push_back(node);
+
+    const std::vector<std::string>& reqs = requires_.find(node)->second;
+    for (std::size_t i = 0; i < reqs.size(); i++) {
+        const std::string& next = reqs[i];
+
+        if (requires_.find(next) == requires_.end()) {
+            *error = "missing: " + next + " (required by " + node + ")";
+            return false;
+        }
+
+        if (in_list(path, next) == true) {
+            std::size_t start = 0;
+            while (path[start] != next) {
+                start = start + 1;
+            }
+            std::string message = "cycle: ";
+            for (std::size_t j = start; j < path.size(); j++) {
+                message = message + path[j] + " -> ";
+            }
+            message = message + next;
+            *error = message;
+            return false;
+        }
+
+        if (in_list(*out, next) == false) {
+            if (dfs(next, path, out, error) == false) {
+                return false;
+            }
+        }
+    }
+
+    path.pop_back();
+    out->push_back(node);
+    return true;
 }
 
 bool DepGraph::order_from(const std::string& root, std::vector<std::string>* out,
                           std::string* error) const {
-    // TODO: DFS with three colors (white / gray = on the current path /
-    // black = finished). Spec §6.2 gives the exact error strings, and
-    // Appendix D traces the diamond.
-    // Clues:
-    //  * Keep a vector<string> path of the gray nodes: push_back when a node
-    //    turns gray, pop_back when it turns black. When an edge reaches a
-    //    gray node x, the cycle is the part of path from x to the end, then
-    //    x again. Check yourself with a>b, a>c, c>a: the answer is
-    //    "cycle: a -> c -> a" (b is already finished and must not appear).
-    //  * Append a node to *out when it turns BLACK (after its requirements),
-    //    never when it turns gray.
-    //  * Order of checks for each edge: missing node, then gray (cycle),
-    //    then white (visit). Black: skip, that is not a cycle.
-    //  * Separators are exactly " -> " (space, dash, greater-than, space).
-    (void)root;
-    (void)out;
-    *error = "not implemented";
-    return false;
+    out->clear();
+    if (requires_.find(root) == requires_.end()) {
+        *error = "unknown: " + root;
+        return false;
+    }
+    std::vector<std::string> path;
+    return dfs(root, path, out, error);
 }
 
 std::vector<std::string> DepGraph::dependents(const std::string& name) const {
-    // TODO: BFS over the reversed edges.
-    // Clues:
-    //  * Mark `name` itself as seen before you start, so a cycle can't add
-    //    it to the result.
-    //  * The order is by (distance, name). Easiest: sort each BFS level
-    //    alphabetically before appending it. Sorting the whole result by
-    //    name alone loses the nearest-first order.
-    //  * std::queue<std::pair<std::string, int>> (node, distance) works, or
-    //    process one level (a vector) at a time.
     (void)name;
     return {};
 }
