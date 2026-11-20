@@ -69,6 +69,9 @@ private:
     // A suggested start (change it if you like):
     std::unordered_map<std::string, std::vector<std::string>> requires_;     // node -> requirements
     std::unordered_map<std::string, std::vector<std::string>> required_by_;  // target -> nodes needing it
+    bool dfs(const std::string& node, std::vector<std::string>& path,
+             std::vector<std::string>* out, std::string* error) const;
+
     // Clue: if you keep required_by_ for the BFS, add_edge must fill it too.
     // Clue: order_from() and the others are const, so requires_[name] does
     // not compile there ("discards qualifiers") - and it would insert a new
