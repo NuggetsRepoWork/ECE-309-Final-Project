@@ -2,6 +2,8 @@
 
 #include "skills/dep_graph.h"
 
+#include <algorithm>
+
 bool DepGraph::add_node(const std::string& name) {
     if (requires_.find(name) != requires_.end()) {
         return false;
@@ -102,6 +104,32 @@ bool DepGraph::order_from(const std::string& root, std::vector<std::string>* out
 }
 
 std::vector<std::string> DepGraph::dependents(const std::string& name) const {
-    (void)name;
-    return {};
+    std::vector<std::string> result;
+    std::vector<std::string> seen;
+    seen.push_back(name);
+    std::vector<std::string> level;
+    level.push_back(name);
+
+    while (level.empty() == false) {
+        std::vector<std::string> next_level;
+        for (std::size_t i = 0; i < level.size(); i++) {
+            auto it = required_by_.find(level[i]);
+            if (it == required_by_.end()) {
+                continue;
+            }
+            for (std::size_t j = 0; j < it->second.size(); j++) {
+                const std::string& who = it->second[j];
+                if (in_list(seen, who) == false) {
+                    seen.push_back(who);
+                    next_level.push_back(who);
+                }
+            }
+        }
+        std::sort(next_level.begin(), next_level.end());
+        for (std::size_t i = 0; i < next_level.size(); i++) {
+            result.push_back(next_level[i]);
+        }
+        level = next_level;
+    }
+    return result;
 }
