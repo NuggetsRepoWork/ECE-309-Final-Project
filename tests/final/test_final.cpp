@@ -482,4 +482,317 @@ TEST(ctx_edge_cases) {
     CHECK(!drop_all.over_budget);
 }
 
+TEST(pol_allowlist_patterns_and_confirm) {
+    auto make = [](const std::string& prog, std::vector<std::string> args) {
+        CommandRequest r;
+        r.program = prog;
+        r.args = args;
+        return r;
+    };
+
+    std::vector<std::string> ok_programs{"ls", "cat", "git"};
+    AllowlistPolicy allow(ok_programs);
+    CHECK(allow.evaluate(make("ls", {})).kind == Decision::Kind::Allow);
+    CHECK(allow.evaluate(make("git", {"status"})).kind == Decision::Kind::Allow);
+    CHECK(allow.evaluate(make("rm", {})).kind == Decision::Kind::Deny);
+    CHECK(allow.evaluate(make("LS", {})).kind == Decision::Kind::Deny);
+    CHECK(allow.evaluate(make("l", {})).kind == Decision::Kind::Deny);
+    CHECK_EQ(allow.evaluate(make("ls", {})).policy, std::string("allowlist"));
+    CHECK(!allow.evaluate(make("rm", {})).reason.empty());
+    AllowlistPolicy nothing(std::vector<std::string>{});
+    CHECK(nothing.evaluate(make("ls", {})).kind == Decision::Kind::Deny);
+
+    std::vector<std::string> bad{";", "rm -rf", ""};
+    ArgumentPatternPolicy pat(bad);
+    CHECK(pat.evaluate(make("cat", {"a;", "rm", "b"})).kind == Decision::Kind::Deny);
+    CHECK(pat.evaluate(make("rm", {"-rf", "/"})).kind == Decision::Kind::Deny);
+    CHECK(pat.evaluate(make("ls", {"-l"})).kind == Decision::Kind::Allow);
+    CHECK(pat.evaluate(make("ls", {})).kind == Decision::Kind::Allow);
+    CHECK_EQ(pat.evaluate(make("rm", {"-rf"})).policy, std::string("patterns"));
+    CHECK(!pat.evaluate(make("rm", {"-rf"})).reason.empty());
+    ArgumentPatternPolicy no_patterns(std::vector<std::string>{});
+    CHECK(no_patterns.evaluate(make("rm", {"-rf", "/"})).kind == Decision::Kind::Allow);
+
+    std::vector<std::string> ask_programs{"git", "curl"};
+    ConfirmPolicy conf(ask_programs);
+    CHECK(conf.evaluate(make("git", {"status"})).kind == Decision::Kind::Ask);
+    CHECK(conf.evaluate(make("curl", {})).kind == Decision::Kind::Ask);
+    CHECK(conf.evaluate(make("ls", {})).kind == Decision::Kind::Allow);
+    CHECK_EQ(conf.evaluate(make("git", {})).policy, std::string("confirm"));
+    CHECK(!conf.evaluate(make("ls", {})).reason.empty());
+}
+
+TEST(pol_rate_limit_edges) {
+    CommandRequest req;
+    req.program = "ls";
+
+    ManualClock c0(0);
+    RateLimitPolicy zero(0, 10.0, c0);
+    CHECK(zero.evaluate(req).kind == Decision::Kind::Deny);
+    CHECK_EQ(zero.tracked(), std::size_t{0});
+
+    ManualClock c1(50);
+    RateLimitPolicy one(1, 5.0, c1);
+    CHECK(one.evaluate(req).kind == Decision::Kind::Allow);
+    c1.advance(4);
+    CHECK(one.evaluate(req).kind == Decision::Kind::Deny);
+    CHECK_EQ(one.tracked(), std::size_t{1});
+    c1.advance(1);
+    CHECK(one.evaluate(req).kind == Decision::Kind::Allow);
+    CHECK_EQ(one.evaluate(req).policy, std::string("ratelimit"));
+    CHECK(!one.evaluate(req).reason.empty());
+
+    ManualClock c3(0);
+    RateLimitPolicy three(3, 10.0, c3);
+    for (int i = 0; i < 3; i++) {
+        CHECK(three.evaluate(req).kind == Decision::Kind::Allow);
+    }
+    for (int i = 0; i < 20; i++) {
+        CHECK(three.evaluate(req).kind == Decision::Kind::Deny);
+    }
+    CHECK_EQ(three.tracked(), std::size_t{3});
+    c3.advance(10);
+    CHECK(three.evaluate(req).kind == Decision::Kind::Allow);
+    CHECK_EQ(three.tracked(), std::size_t{1});
+
+    ManualClock c4(0);
+    RateLimitPolicy busy(5, 3.0, c4);
+    for (int i = 0; i < 1000; i++) {
+        busy.evaluate(req);
+        c4.advance(1);
+        CHECK(busy.tracked() <= 5u);
+    }
+}
+
+TEST(pol_chain_empty_null_and_nested) {
+    auto make = [](const std::string& prog, std::vector<std::string> args) {
+        CommandRequest r;
+        r.program = prog;
+        r.args = args;
+        return r;
+    };
+
+    PolicyChain empty;
+    CHECK_EQ(empty.size(), std::size_t{0});
+    Decision d0 = empty.evaluate(make("ls", {}));
+    CHECK(d0.kind == Decision::Kind::Deny);
+    CHECK_EQ(d0.policy, std::string("chain"));
+    CHECK(!d0.reason.empty());
+
+    PolicyChain c;
+    CHECK(!c.add(nullptr));
+    CHECK_EQ(c.size(), std::size_t{0});
+
+    std::vector<std::string> inner_ok{"ls", "git"};
+    std::vector<std::string> inner_bad{";"};
+    std::vector<std::string> ask_programs{"git"};
+    auto inner = std::make_unique<PolicyChain>();
+    REQUIRE(inner->add(std::make_unique<AllowlistPolicy>(inner_ok)));
+    REQUIRE(inner->add(std::make_unique<ArgumentPatternPolicy>(inner_bad)));
+    PolicyChain outer;
+    REQUIRE(outer.add(std::move(inner)));
+    REQUIRE(outer.add(std::make_unique<ConfirmPolicy>(ask_programs)));
+    CHECK_EQ(outer.size(), std::size_t{2});
+
+    Decision a = outer.evaluate(make("ls", {}));
+    CHECK(a.kind == Decision::Kind::Allow);
+    CHECK_EQ(a.policy, std::string("chain"));
+    CHECK(!a.reason.empty());
+
+    Decision b = outer.evaluate(make("git", {"status"}));
+    CHECK(b.kind == Decision::Kind::Ask);
+    CHECK_EQ(b.policy, std::string("confirm"));
+
+    Decision e = outer.evaluate(make("rm", {"x"}));
+    CHECK(e.kind == Decision::Kind::Deny);
+    CHECK_EQ(e.policy, std::string("allowlist"));
+
+    Decision f = outer.evaluate(make("ls", {";"}));
+    CHECK(f.kind == Decision::Kind::Deny);
+    CHECK_EQ(f.policy, std::string("patterns"));
+}
+
+TEST(pol_chain_ask_vs_deny_and_rate_limit) {
+    CommandRequest req;
+    req.program = "make";
+
+    std::vector<std::string> ask_programs{"make"};
+    std::vector<std::string> allow_programs{"make"};
+    std::vector<std::string> bad{"clean"};
+    req.args = {"clean"};
+
+    PolicyChain ask_then_deny;
+    REQUIRE(ask_then_deny.add(std::make_unique<ConfirmPolicy>(ask_programs)));
+    REQUIRE(ask_then_deny.add(std::make_unique<ArgumentPatternPolicy>(bad)));
+    Decision d = ask_then_deny.evaluate(req);
+    CHECK(d.kind == Decision::Kind::Deny);
+    CHECK_EQ(d.policy, std::string("patterns"));
+
+    req.args = {"all"};
+    Decision a = ask_then_deny.evaluate(req);
+    CHECK(a.kind == Decision::Kind::Ask);
+    CHECK_EQ(a.policy, std::string("confirm"));
+
+    ManualClock clock(0);
+    PolicyChain limited;
+    REQUIRE(limited.add(std::make_unique<AllowlistPolicy>(allow_programs)));
+    REQUIRE(limited.add(std::make_unique<RateLimitPolicy>(2, 10.0, clock)));
+    CHECK(limited.evaluate(req).kind == Decision::Kind::Allow);
+    CHECK(limited.evaluate(req).kind == Decision::Kind::Allow);
+    Decision blocked = limited.evaluate(req);
+    CHECK(blocked.kind == Decision::Kind::Deny);
+    CHECK_EQ(blocked.policy, std::string("ratelimit"));
+    clock.advance(10);
+    CHECK(limited.evaluate(req).kind == Decision::Kind::Allow);
+}
+
+TEST(graph_chain_diamond_and_basics) {
+    DepGraph g;
+    CHECK_EQ(g.node_count(), std::size_t{0});
+    CHECK(g.add_node("a"));
+    CHECK(!g.add_node("a"));
+    CHECK(g.has_node("a"));
+    CHECK(!g.has_node("b"));
+    CHECK(!g.add_edge("nope", "a"));
+    CHECK(g.requirements("nope").empty());
+
+    g.add_node("b");
+    g.add_node("c");
+    CHECK(g.add_edge("a", "c"));
+    CHECK(g.add_edge("a", "b"));
+    CHECK(!g.add_edge("a", "b"));
+    CHECK_EQ(g.requirements("a"), (std::vector<std::string>{"c", "b"}));
+    CHECK_EQ(g.node_count(), std::size_t{3});
+
+    DepGraph chain;
+    for (const char* n : {"a", "b", "c"}) chain.add_node(n);
+    chain.add_edge("a", "b");
+    chain.add_edge("b", "c");
+    std::vector<std::string> order;
+    std::string err;
+    REQUIRE(chain.order_from("a", &order, &err));
+    CHECK_EQ(order, (std::vector<std::string>{"c", "b", "a"}));
+    REQUIRE(chain.order_from("b", &order, &err));
+    CHECK_EQ(order, (std::vector<std::string>{"c", "b"}));
+    REQUIRE(chain.order_from("c", &order, &err));
+    CHECK_EQ(order, (std::vector<std::string>{"c"}));
+
+    DepGraph d;
+    for (const char* n : {"a", "b", "c", "d", "e"}) d.add_node(n);
+    d.add_edge("a", "b");
+    d.add_edge("a", "c");
+    d.add_edge("b", "d");
+    d.add_edge("c", "d");
+    d.add_edge("d", "e");
+    d.add_edge("c", "e");
+    REQUIRE(d.order_from("a", &order, &err));
+    CHECK_EQ(order, (std::vector<std::string>{"e", "d", "b", "c", "a"}));
+    CHECK_EQ(order.size(), std::size_t{5});
+}
+
+TEST(graph_cycles_missing_unknown_and_long_chain) {
+    std::vector<std::string> order;
+    std::string err;
+
+    DepGraph self;
+    self.add_node("a");
+    self.add_edge("a", "a");
+    CHECK(!self.order_from("a", &order, &err));
+    CHECK_EQ(err, std::string("cycle: a -> a"));
+
+    DepGraph three;
+    for (const char* n : {"a", "b", "c"}) three.add_node(n);
+    three.add_edge("a", "b");
+    three.add_edge("b", "c");
+    three.add_edge("c", "a");
+    CHECK(!three.order_from("a", &order, &err));
+    CHECK_EQ(err, std::string("cycle: a -> b -> c -> a"));
+
+    DepGraph off_root;
+    for (const char* n : {"a", "b", "c"}) off_root.add_node(n);
+    off_root.add_edge("a", "b");
+    off_root.add_edge("b", "c");
+    off_root.add_edge("c", "b");
+    CHECK(!off_root.order_from("a", &order, &err));
+    CHECK_EQ(err, std::string("cycle: b -> c -> b"));
+
+    DepGraph missing;
+    for (const char* n : {"a", "b"}) missing.add_node(n);
+    missing.add_edge("a", "b");
+    missing.add_edge("b", "gone");
+    CHECK(!missing.order_from("a", &order, &err));
+    CHECK_EQ(err, std::string("missing: gone (required by b)"));
+
+    CHECK(!missing.order_from("zzz", &order, &err));
+    CHECK_EQ(err, std::string("unknown: zzz"));
+
+    DepGraph first;
+    for (const char* n : {"a", "b", "c"}) first.add_node(n);
+    first.add_edge("a", "b");
+    first.add_edge("a", "c");
+    first.add_edge("b", "gone");
+    first.add_edge("c", "a");
+    CHECK(!first.order_from("a", &order, &err));
+    CHECK_EQ(err, std::string("missing: gone (required by b)"));
+
+    DepGraph big;
+    const int n = 5000;
+    for (int i = 0; i < n; i++) {
+        big.add_node("s" + std::to_string(i));
+    }
+    for (int i = 0; i + 1 < n; i++) {
+        big.add_edge("s" + std::to_string(i), "s" + std::to_string(i + 1));
+    }
+    REQUIRE(big.order_from("s0", &order, &err));
+    CHECK_EQ(order.size(), std::size_t{5000});
+    CHECK_EQ(order.front(), std::string("s4999"));
+    CHECK_EQ(order.back(), std::string("s0"));
+}
+
+TEST(graph_dependents_order_cycles_and_missing) {
+    DepGraph g;
+    for (const char* n : {"base", "zed", "mid", "top", "aaa"}) g.add_node(n);
+    g.add_edge("zed", "base");
+    g.add_edge("mid", "base");
+    g.add_edge("top", "mid");
+    g.add_edge("aaa", "top");
+    CHECK_EQ(g.dependents("base"), (std::vector<std::string>{"mid", "zed", "top", "aaa"}));
+    CHECK_EQ(g.dependents("mid"), (std::vector<std::string>{"top", "aaa"}));
+    CHECK_EQ(g.dependents("aaa"), std::vector<std::string>{});
+
+    DepGraph same_level;
+    for (const char* n : {"core", "x", "b", "c"}) same_level.add_node(n);
+    same_level.add_edge("x", "core");
+    same_level.add_edge("b", "core");
+    same_level.add_edge("c", "core");
+    CHECK_EQ(same_level.dependents("core"), (std::vector<std::string>{"b", "c", "x"}));
+
+    DepGraph diamond;
+    for (const char* n : {"a", "b", "c", "d"}) diamond.add_node(n);
+    diamond.add_edge("a", "b");
+    diamond.add_edge("a", "c");
+    diamond.add_edge("b", "d");
+    diamond.add_edge("c", "d");
+    CHECK_EQ(diamond.dependents("d"), (std::vector<std::string>{"b", "c", "a"}));
+    CHECK_EQ(diamond.dependents("a"), std::vector<std::string>{});
+
+    DepGraph loop;
+    for (const char* n : {"p", "q", "r"}) loop.add_node(n);
+    loop.add_edge("p", "q");
+    loop.add_edge("q", "r");
+    loop.add_edge("r", "p");
+    CHECK_EQ(loop.dependents("p"), (std::vector<std::string>{"r", "q"}));
+
+    DepGraph self;
+    self.add_node("s");
+    self.add_edge("s", "s");
+    CHECK_EQ(self.dependents("s"), std::vector<std::string>{});
+
+    DepGraph missing;
+    missing.add_node("m");
+    missing.add_edge("m", "gone");
+    CHECK_EQ(missing.dependents("gone"), (std::vector<std::string>{"m"}));
+    CHECK_EQ(missing.dependents("nobody"), std::vector<std::string>{});
+}
+
 int main(int argc, char** argv) { return mt::run_all(argc, argv); }
